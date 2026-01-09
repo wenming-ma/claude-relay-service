@@ -314,7 +314,6 @@ class ModelFetcherService {
         return []
     }
   }
-
 }
 
 // Export singleton instance
