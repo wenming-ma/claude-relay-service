@@ -61,81 +61,73 @@ router.post('/refresh', authenticateAdmin, async (req, res) => {
       gemini: { generated: 0, skipped: 0, error: null }
     }
 
-    // Fetch models from Claude accounts
+    // Fetch models from Claude accounts (only if accounts exist)
     if (!platform || platform === 'claude' || platform === 'all') {
       try {
         const claudeAccounts = await claudeAccountService.getAllAccounts()
-        const activeAccounts = claudeAccounts.filter((a) => a.isEnabled !== false && a.accessToken)
+        const activeAccounts = claudeAccounts.filter(
+          (a) => a.isActive !== false && a.schedulable !== false
+        )
 
         if (activeAccounts.length > 0) {
           // Use the first active account to fetch models
           const account = activeAccounts[0]
-          const models = await modelFetcherService.fetchClaudeModels(
-            account.accessToken,
-            account.proxy
-          )
+          const accessToken = await claudeAccountService.getValidAccessToken(account.id)
+          const models = await modelFetcherService.fetchClaudeModels(accessToken, account.proxy || null)
           const result = await modelAliasService.bulkGenerateAliases(models, 'claude')
           results.claude = result
-        } else {
-          // Use default models if no active accounts
-          const defaultModels = modelFetcherService._getDefaultClaudeModels()
-          const result = await modelAliasService.bulkGenerateAliases(defaultModels, 'claude')
-          results.claude = result
         }
+        // No active accounts - skip (don't generate default aliases)
       } catch (error) {
         results.claude.error = error.message
         logger.warn('Failed to refresh Claude model aliases:', error.message)
       }
     }
 
-    // Fetch models from OpenAI accounts
+    // Fetch models from OpenAI accounts (only if accounts exist)
     if (!platform || platform === 'openai' || platform === 'all') {
       try {
         const openaiAccounts = await openaiAccountService.getAllAccounts()
-        const activeAccounts = openaiAccounts.filter((a) => a.isEnabled !== false && a.accessToken)
+        const activeAccounts = openaiAccounts.filter(
+          (a) => a.isActive !== false && a.schedulable !== false
+        )
 
         if (activeAccounts.length > 0) {
           // Use the first active account to fetch models
-          const account = activeAccounts[0]
-          const models = await modelFetcherService.fetchOpenAIModels(
-            account.accessToken,
-            account.proxy
-          )
+          const accountSummary = activeAccounts[0]
+          const account = await openaiAccountService.getAccount(accountSummary.id)
+          const accessToken = openaiAccountService.decrypt(account.accessToken)
+          const chatgptAccountId = account.accountId || account.chatgptUserId || accountSummary.id || null
+          const models = await modelFetcherService.fetchOpenAIModels(accessToken, account.proxy || null, {
+            chatgptAccountId
+          })
           const result = await modelAliasService.bulkGenerateAliases(models, 'openai')
           results.openai = result
-        } else {
-          // Use default models if no active accounts
-          const defaultModels = modelFetcherService._getDefaultOpenAIModels()
-          const result = await modelAliasService.bulkGenerateAliases(defaultModels, 'openai')
-          results.openai = result
         }
+        // No active accounts - skip (don't generate default aliases)
       } catch (error) {
         results.openai.error = error.message
         logger.warn('Failed to refresh OpenAI model aliases:', error.message)
       }
     }
 
-    // Fetch models from Gemini accounts
+    // Fetch models from Gemini accounts (only if accounts exist)
     if (!platform || platform === 'gemini' || platform === 'all') {
       try {
         const geminiAccounts = await geminiAccountService.getAllAccounts()
-        const activeAccounts = geminiAccounts.filter((a) => a.isEnabled !== false && a.accessToken)
+        const activeAccounts = geminiAccounts.filter(
+          (a) => a.isActive !== false && a.schedulable !== false
+        )
 
         if (activeAccounts.length > 0) {
           // Use the first active account to fetch models
-          const account = activeAccounts[0]
-          const models = await modelFetcherService.fetchGeminiModels(
-            account.accessToken,
-            account.proxy
-          )
+          const accountSummary = activeAccounts[0]
+          const account = await geminiAccountService.getAccount(accountSummary.id)
+          const models = await modelFetcherService.fetchGeminiModels(account.accessToken, account.proxy || null)
           const result = await modelAliasService.bulkGenerateAliases(models, 'gemini')
           results.gemini = result
-        } else {
-          // Use default models if no active accounts
-          const defaultModels = modelFetcherService._getDefaultGeminiModels()
-          const result = await modelAliasService.bulkGenerateAliases(defaultModels, 'gemini')
-          results.gemini = result
         }
+        // No active accounts - skip (don't generate default aliases)
       } catch (error) {
         results.gemini.error = error.message
         logger.warn('Failed to refresh Gemini model aliases:', error.message)

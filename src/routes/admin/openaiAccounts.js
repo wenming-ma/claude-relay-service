@@ -197,10 +197,9 @@ router.post('/exchange-code', authenticateAdmin, async (req, res) => {
     ;(async () => {
       try {
         if (access_token) {
-          const models = await modelFetcherService.fetchOpenAIModels(
-            access_token,
-            sessionData.proxy
-          )
+          const models = await modelFetcherService.fetchOpenAIModels(access_token, sessionData.proxy, {
+            chatgptAccountId: accountId || chatgptUserId || null
+          })
           const result = await modelAliasService.bulkGenerateAliases(models, 'openai')
           logger.info(
             `🏷️ OpenAI model aliases: ${result.generated} generated, ${result.skipped} skipped`
