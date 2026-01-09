@@ -18,6 +18,8 @@ const oauthHelper = require('../../utils/oauthHelper')
 const CostCalculator = require('../../utils/costCalculator')
 const webhookNotifier = require('../../utils/webhookNotifier')
 const { formatAccountExpiry, mapExpiryField } = require('./utils')
+const modelFetcherService = require('../../services/modelFetcherService')
+const modelAliasService = require('../../services/modelAliasService')
 
 // 生成OAuth授权URL
 router.post('/claude-accounts/generate-auth-url', authenticateAdmin, async (req, res) => {
@@ -104,6 +106,25 @@ router.post('/claude-accounts/exchange-code', authenticateAdmin, async (req, res
 
     // 清理OAuth会话
     await redis.deleteOAuthSession(sessionId)
+
+    // 异步获取模型列表并生成别名（不阻塞响应）
+    ;(async () => {
+      try {
+        const accessToken = tokenData.access_token || tokenData.accessToken
+        if (accessToken) {
+          const models = await modelFetcherService.fetchClaudeModels(
+            accessToken,
+            oauthSession.proxy
+          )
+          const result = await modelAliasService.bulkGenerateAliases(models, 'claude')
+          logger.info(
+            `🏷️ Claude model aliases: ${result.generated} generated, ${result.skipped} skipped`
+          )
+        }
+      } catch (aliasError) {
+        logger.warn('Failed to generate Claude model aliases:', aliasError.message)
+      }
+    })()
 
     logger.success('🎉 Successfully exchanged authorization code for tokens')
     return res.json({
@@ -226,6 +247,25 @@ router.post('/claude-accounts/exchange-setup-token-code', authenticateAdmin, asy
 
     // 清理OAuth会话
     await redis.deleteOAuthSession(sessionId)
+
+    // 异步获取模型列表并生成别名（不阻塞响应）
+    ;(async () => {
+      try {
+        const accessToken = tokenData.access_token || tokenData.accessToken
+        if (accessToken) {
+          const models = await modelFetcherService.fetchClaudeModels(
+            accessToken,
+            oauthSession.proxy
+          )
+          const result = await modelAliasService.bulkGenerateAliases(models, 'claude')
+          logger.info(
+            `🏷️ Claude model aliases: ${result.generated} generated, ${result.skipped} skipped`
+          )
+        }
+      } catch (aliasError) {
+        logger.warn('Failed to generate Claude model aliases:', aliasError.message)
+      }
+    })()
 
     logger.success('🎉 Successfully exchanged setup token authorization code for tokens')
     return res.json({

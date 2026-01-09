@@ -9,6 +9,7 @@ const {
 } = require('../handlers/geminiHandlers')
 const openaiRoutes = require('./openaiRoutes')
 const apiKeyService = require('../services/apiKeyService')
+const modelAliasService = require('../services/modelAliasService')
 
 const router = express.Router()
 
@@ -41,9 +42,28 @@ function detectBackendFromModel(modelName) {
 
 // 🚀 智能后端路由处理器
 async function routeToBackend(req, res, requestedModel) {
-  const backend = detectBackendFromModel(requestedModel)
+  // 🏷️ Resolve model alias to real model name
+  let actualModel = requestedModel
+  let aliasResolved = false
+  try {
+    const aliasInfo = await modelAliasService.resolveAlias(requestedModel)
+    if (aliasInfo.isAlias) {
+      actualModel = aliasInfo.realModel
+      aliasResolved = true
+      logger.info(`🏷️ Resolved alias '${requestedModel}' to model '${actualModel}'`)
+      // Update the request body with the actual model name
+      req.body.model = actualModel
+    }
+  } catch (aliasError) {
+    // Silently ignore alias resolution errors, use original model
+    logger.debug(`Alias resolution skipped: ${aliasError.message}`)
+  }
 
-  logger.info(`🔀 Routing request - Model: ${requestedModel}, Backend: ${backend}`)
+  const backend = detectBackendFromModel(actualModel)
+
+  logger.info(
+    `🔀 Routing request - Model: ${actualModel}${aliasResolved ? ` (alias: ${requestedModel})` : ''}, Backend: ${backend}`
+  )
 
   // 检查权限
   const { permissions } = req.apiKey
@@ -86,7 +106,7 @@ async function routeToBackend(req, res, requestedModel) {
 
     // 转换为 Gemini 格式
     const geminiRequest = {
-      model: requestedModel,
+      model: actualModel,
       messages: req.body.messages,
       temperature: req.body.temperature || 0.7,
       max_tokens: req.body.max_tokens || 4096,

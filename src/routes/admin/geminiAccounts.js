@@ -7,6 +7,8 @@ const { authenticateAdmin } = require('../../middleware/auth')
 const logger = require('../../utils/logger')
 const webhookNotifier = require('../../utils/webhookNotifier')
 const { formatAccountExpiry, mapExpiryField } = require('./utils')
+const modelFetcherService = require('../../services/modelFetcherService')
+const modelAliasService = require('../../services/modelAliasService')
 
 const router = express.Router()
 
@@ -142,6 +144,22 @@ router.post('/exchange-code', authenticateAdmin, async (req, res) => {
     if (sessionId) {
       await redis.deleteOAuthSession(sessionId)
     }
+
+    // 异步获取模型列表并生成别名（不阻塞响应）
+    ;(async () => {
+      try {
+        const accessToken = tokens.access_token || tokens.accessToken
+        if (accessToken) {
+          const models = await modelFetcherService.fetchGeminiModels(accessToken, proxyConfig)
+          const result = await modelAliasService.bulkGenerateAliases(models, 'gemini')
+          logger.info(
+            `🏷️ Gemini model aliases: ${result.generated} generated, ${result.skipped} skipped`
+          )
+        }
+      } catch (aliasError) {
+        logger.warn('Failed to generate Gemini model aliases:', aliasError.message)
+      }
+    })()
 
     logger.success('✅ Successfully exchanged Gemini authorization code')
     return res.json({ success: true, data: { tokens, oauthProvider: resolvedOauthProvider } })

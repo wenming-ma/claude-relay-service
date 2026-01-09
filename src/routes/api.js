@@ -25,6 +25,7 @@ const {
   handleAnthropicMessagesToGemini,
   handleAnthropicCountTokensToGemini
 } = require('../services/anthropicGeminiBridgeService')
+const modelAliasService = require('../services/modelAliasService')
 const router = express.Router()
 
 function queueRateLimitUpdate(rateLimitInfo, usageSummary, model, context = '') {
@@ -182,8 +183,24 @@ async function handleMessagesRequest(req, res) {
       }
     }
 
+    // 🏷️ Resolve model alias to real model name (before any processing)
+    const originalModelName = req.body.model
+    try {
+      if (req.body.model) {
+        const aliasInfo = await modelAliasService.resolveAlias(req.body.model)
+        if (aliasInfo.isAlias) {
+          logger.api(`🏷️ Resolved alias '${req.body.model}' to model '${aliasInfo.realModel}'`)
+          req.body.model = aliasInfo.realModel
+        }
+      }
+    } catch (aliasError) {
+      // Silently ignore alias resolution errors, use original model
+      logger.debug(`Alias resolution skipped: ${aliasError.message}`)
+    }
+
     logger.api('📥 /v1/messages request received', {
       model: req.body.model || null,
+      originalModel: originalModelName !== req.body.model ? originalModelName : undefined,
       forcedVendor,
       stream: req.body.stream === true
     })
@@ -1291,11 +1308,30 @@ router.get('/v1/models', authenticateApiKey, async (req, res) => {
     // 从 modelService 获取所有支持的模型
     const models = modelService.getAllModels()
 
+    // 获取模型别名列表
+    let aliases = []
+    try {
+      const aliasData = await modelAliasService.getAllAliases()
+      aliases = aliasData.map((a) => ({
+        id: a.alias,
+        object: 'model',
+        created: Date.now(),
+        owned_by: a.platform,
+        real_model: a.realModel,
+        description: `Alias for ${a.realModel}`
+      }))
+    } catch (aliasError) {
+      logger.warn('Failed to fetch model aliases:', aliasError.message)
+    }
+
+    // 合并真实模型和别名
+    const allModels = [...models, ...aliases]
+
     // 可选：根据 API Key 的模型限制过滤
-    let filteredModels = models
+    let filteredModels = allModels
     if (req.apiKey.enableModelRestriction && req.apiKey.restrictedModels?.length > 0) {
       // 将 restrictedModels 视为黑名单：过滤掉受限模型
-      filteredModels = models.filter((model) => !req.apiKey.restrictedModels.includes(model.id))
+      filteredModels = allModels.filter((model) => !req.apiKey.restrictedModels.includes(model.id))
     }
 
     res.json({

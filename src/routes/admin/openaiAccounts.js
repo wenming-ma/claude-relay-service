@@ -15,6 +15,8 @@ const logger = require('../../utils/logger')
 const ProxyHelper = require('../../utils/proxyHelper')
 const webhookNotifier = require('../../utils/webhookNotifier')
 const { formatAccountExpiry, mapExpiryField } = require('./utils')
+const modelFetcherService = require('../../services/modelFetcherService')
+const modelAliasService = require('../../services/modelAliasService')
 
 const router = express.Router()
 
@@ -190,6 +192,24 @@ router.post('/exchange-code', authenticateAdmin, async (req, res) => {
 
     // 清理 Redis 会话
     await redis.deleteOAuthSession(sessionId)
+
+    // 异步获取模型列表并生成别名（不阻塞响应）
+    ;(async () => {
+      try {
+        if (access_token) {
+          const models = await modelFetcherService.fetchOpenAIModels(
+            access_token,
+            sessionData.proxy
+          )
+          const result = await modelAliasService.bulkGenerateAliases(models, 'openai')
+          logger.info(
+            `🏷️ OpenAI model aliases: ${result.generated} generated, ${result.skipped} skipped`
+          )
+        }
+      } catch (aliasError) {
+        logger.warn('Failed to generate OpenAI model aliases:', aliasError.message)
+      }
+    })()
 
     logger.success('✅ OpenAI OAuth token exchange successful')
 

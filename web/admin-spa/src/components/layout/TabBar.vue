@@ -70,6 +70,7 @@ const tabs = computed(() => {
   }
 
   baseTabs.push(
+    { key: 'modelAliases', name: '模型别名', shortName: '别名', icon: 'fas fa-tags' },
     { key: 'tutorial', name: '使用教程', shortName: '教程', icon: 'fas fa-graduation-cap' },
     { key: 'settings', name: '系统设置', shortName: '设置', icon: 'fas fa-cogs' }
   )
